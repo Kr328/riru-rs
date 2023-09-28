@@ -1,5 +1,6 @@
 use std::{
     ffi::{CStr, CString},
+    path::{Path, PathBuf},
     ptr::null_mut,
 };
 
@@ -84,7 +85,7 @@ pub trait Module: ModuleTable {
 }
 
 pub struct Api {
-    module_path: String,
+    module_path: PathBuf,
     allow_unload: Option<&'static mut c_int>,
 }
 
@@ -95,7 +96,7 @@ impl Api {
         }
     }
 
-    pub fn get_module_path(&self) -> &str {
+    pub fn get_module_path(&self) -> &Path {
         &self.module_path
     }
 }
@@ -263,7 +264,7 @@ pub unsafe fn module_entry<T: Module + 'static>(riru: *const Riru) -> *mut RiruV
     }
 
     let api = Api {
-        module_path: CStr::from_ptr((*riru).magisk_module_path).to_str().unwrap().to_string(),
+        module_path: PathBuf::from(CStr::from_ptr((*riru).magisk_module_path).to_str().unwrap().to_string()),
         allow_unload: (*riru).allow_unload.as_mut(),
     };
 
