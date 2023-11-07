@@ -66,7 +66,13 @@ pub enum ForkResult {
     OnChild,
 }
 
-pub trait ModuleTable {
+pub trait Module {
+    fn new(api: Api) -> Self;
+
+    fn support_hide(&self) -> bool;
+    fn version(&self) -> i32;
+    fn version_name(&self) -> String;
+
     fn should_skip_uid(&mut self, uid: jint) -> bool;
     fn pre_fork_and_specialize(&mut self, env: *mut JNIEnv, args: &mut ForkAndSpecializeArgs);
     fn post_fork_and_specialize(&mut self, env: *mut JNIEnv, result: ForkResult);
@@ -74,14 +80,6 @@ pub trait ModuleTable {
     fn post_fork_system_server(&mut self, env: *mut JNIEnv, result: ForkResult);
     fn pre_specialize_app_process(&mut self, env: *mut JNIEnv, args: &mut SpecializeAppProcessArgs);
     fn post_specialize_app_process(&mut self, env: *mut JNIEnv);
-}
-
-pub trait Module: ModuleTable {
-    fn support_hide(&self) -> bool;
-    fn version(&self) -> i32;
-    fn version_name(&self) -> String;
-
-    fn new(api: Api) -> Self;
 }
 
 pub struct Api {
@@ -106,22 +104,22 @@ macro_rules! register_riru_module {
     ($module:ty) => {
         #[no_mangle]
         pub unsafe extern "C" fn init(riru: *const ::std::ffi::c_void) -> *mut ::std::ffi::c_void {
-            $crate::module_entry::<$module>(riru.cast()).cast()
+            $crate::_module_entry::<$module>(riru.cast()).cast()
         }
     };
 }
 
-static mut MODULE_TABLE: Option<Box<dyn ModuleTable>> = None;
+static mut MODULE: *mut () = null_mut();
 
-unsafe extern "C" fn module_should_skip_uid(uid: c_int) -> c_int {
-    if MODULE_TABLE.as_mut().unwrap().should_skip_uid(uid) {
+unsafe extern "C" fn module_should_skip_uid<M: Module>(uid: c_int) -> c_int {
+    if (*MODULE.cast::<M>()).should_skip_uid(uid) {
         1
     } else {
         0
     }
 }
 
-unsafe extern "C" fn module_fork_and_specialize_pre(
+unsafe extern "C" fn module_fork_and_specialize_pre<M: Module>(
     env: *mut JNIEnv,
     _: jclass,
     uid: *mut jint,
@@ -164,20 +162,20 @@ unsafe extern "C" fn module_fork_and_specialize_pre(
         bind_mount_app_storage_dirs: bind_mount_app_storage_dirs.as_mut(),
     };
 
-    MODULE_TABLE.as_mut().unwrap().pre_fork_and_specialize(env, &mut args);
+    (*MODULE.cast::<M>()).pre_fork_and_specialize(env, &mut args);
 }
 
-unsafe extern "C" fn module_fork_and_specialize_post(env: *mut JNIEnv, _: jclass, res: jint) {
+unsafe extern "C" fn module_fork_and_specialize_post<M: Module>(env: *mut JNIEnv, _: jclass, res: jint) {
     let result = if res == 0 {
         ForkResult::OnChild
     } else {
         ForkResult::OnParent(res as libc::pid_t)
     };
 
-    MODULE_TABLE.as_mut().unwrap().post_fork_and_specialize(env, result);
+    (*MODULE.cast::<M>()).post_fork_and_specialize(env, result);
 }
 
-unsafe extern "C" fn module_fork_system_server_pre(
+unsafe extern "C" fn module_fork_system_server_pre<M: Module>(
     env: *mut JNIEnv,
     _: jclass,
     uid: *mut uid_t,
@@ -198,20 +196,20 @@ unsafe extern "C" fn module_fork_system_server_pre(
         effective_capabilities: effective_capabilities.as_mut(),
     };
 
-    MODULE_TABLE.as_mut().unwrap().pre_fork_system_server(env, &mut args);
+    (*MODULE.cast::<M>()).pre_fork_system_server(env, &mut args);
 }
 
-unsafe extern "C" fn module_fork_system_server_post(env: *mut JNIEnv, _: jclass, res: jint) {
+unsafe extern "C" fn module_fork_system_server_post<M: Module>(env: *mut JNIEnv, _: jclass, res: jint) {
     let result = if res == 0 {
         ForkResult::OnChild
     } else {
         ForkResult::OnParent(res as libc::pid_t)
     };
 
-    MODULE_TABLE.as_mut().unwrap().post_fork_system_server(env, result);
+    (*MODULE.cast::<M>()).post_fork_system_server(env, result);
 }
 
-unsafe extern "C" fn module_specialize_app_process_pre(
+unsafe extern "C" fn module_specialize_app_process_pre<M: Module>(
     env: *mut JNIEnv,
     _: jclass,
     uid: *mut jint,
@@ -250,15 +248,19 @@ unsafe extern "C" fn module_specialize_app_process_pre(
         bind_mount_app_storage_dirs: bind_mount_app_storage_dirs.as_mut(),
     };
 
-    MODULE_TABLE.as_mut().unwrap().pre_specialize_app_process(env, &mut args);
+    (*MODULE.cast::<M>()).pre_specialize_app_process(env, &mut args);
 }
 
-unsafe extern "C" fn module_specialize_app_process_post(env: *mut JNIEnv, _: jclass) {
-    MODULE_TABLE.as_mut().unwrap().post_specialize_app_process(env);
+unsafe extern "C" fn module_specialize_app_process_post<M: Module>(env: *mut JNIEnv, _: jclass) {
+    (*MODULE.cast::<M>()).post_specialize_app_process(env);
 }
 
 #[doc(hidden)]
-pub unsafe fn module_entry<T: Module + 'static>(riru: *const Riru) -> *mut RiruVersionedModuleInfo {
+pub unsafe fn _module_entry<M: Module>(riru: *const Riru) -> *mut RiruVersionedModuleInfo {
+    if !MODULE.is_null() {
+        panic!("already registered");
+    }
+
     if (*riru).riru_api_version < sys::API_VERSION {
         return null_mut();
     }
@@ -268,7 +270,7 @@ pub unsafe fn module_entry<T: Module + 'static>(riru: *const Riru) -> *mut RiruV
         allow_unload: (*riru).allow_unload.as_mut(),
     };
 
-    let module = T::new(api);
+    let module = M::new(api);
 
     let info = RiruVersionedModuleInfo {
         module_api_version: sys::API_VERSION,
@@ -277,17 +279,17 @@ pub unsafe fn module_entry<T: Module + 'static>(riru: *const Riru) -> *mut RiruV
             version: module.version(),
             version_name: CString::new(module.version_name()).unwrap().into_raw(),
             on_module_loaded: None,
-            should_skip_uid: Some(module_should_skip_uid),
-            fork_and_specialize_pre: Some(module_fork_and_specialize_pre),
-            fork_and_specialize_post: Some(module_fork_and_specialize_post),
-            fork_system_server_pre: Some(module_fork_system_server_pre),
-            fork_system_server_post: Some(module_fork_system_server_post),
-            specialize_app_process_pre: Some(module_specialize_app_process_pre),
-            specialize_app_process_post: Some(module_specialize_app_process_post),
+            should_skip_uid: Some(module_should_skip_uid::<M>),
+            fork_and_specialize_pre: Some(module_fork_and_specialize_pre::<M>),
+            fork_and_specialize_post: Some(module_fork_and_specialize_post::<M>),
+            fork_system_server_pre: Some(module_fork_system_server_pre::<M>),
+            fork_system_server_post: Some(module_fork_system_server_post::<M>),
+            specialize_app_process_pre: Some(module_specialize_app_process_pre::<M>),
+            specialize_app_process_post: Some(module_specialize_app_process_post::<M>),
         },
     };
 
-    MODULE_TABLE = Some(Box::new(module));
+    MODULE = Box::leak(Box::new(module)) as *mut M as *mut ();
 
     Box::into_raw(Box::new(info))
 }
