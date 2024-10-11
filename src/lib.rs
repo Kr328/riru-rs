@@ -1,70 +1,77 @@
-use std::{
-    ffi::{CStr, CString},
-    path::{Path, PathBuf},
-    ptr::null_mut,
-};
+#![no_std]
 
-use jni_sys::{jboolean, jclass, jint, jintArray, jlong, jobjectArray, jstring, JNIEnv};
-use libc::{c_int, gid_t, uid_t};
+extern crate alloc;
+
+use alloc::{
+    boxed::Box,
+    ffi::CString,
+    string::{String, ToString},
+};
+use core::{ffi::CStr, ptr::null_mut};
+
+use typed_jni::{define_java_class, Array, Context, JString, LocalObject, TrampolineClass};
 
 use crate::sys::{Riru, RiruModuleInfo, RiruVersionedModuleInfo};
 
 mod sys;
 
 pub struct ForkAndSpecializeArgs<'a> {
-    pub uid: Option<&'a mut jint>,
-    pub gid: Option<&'a mut jint>,
-    pub gids: Option<&'a mut jintArray>,
-    pub runtime_flags: Option<&'a mut jint>,
-    pub rlimits: Option<&'a mut jobjectArray>,
-    pub mount_external: Option<&'a mut jint>,
-    pub se_info: Option<&'a mut jstring>,
-    pub nice_name: Option<&'a mut jstring>,
-    pub fds_to_close: Option<&'a mut jintArray>,
-    pub fds_to_ignore: Option<&'a mut jintArray>,
-    pub is_child_zygote: Option<&'a mut jboolean>,
-    pub instruction_set: Option<&'a mut jstring>,
-    pub app_data_dir: Option<&'a mut jstring>,
-    pub is_top_app: Option<&'a mut jboolean>,
-    pub pkg_data_info_list: Option<&'a mut jobjectArray>,
-    pub whitelisted_data_info_list: Option<&'a mut jobjectArray>,
-    pub bind_mount_app_data_dirs: Option<&'a mut jboolean>,
-    pub bind_mount_app_storage_dirs: Option<&'a mut jboolean>,
+    pub uid: Option<&'a mut i32>,
+    pub gid: Option<&'a mut i32>,
+    pub gids: Option<&'a mut LocalObject<'a, Array<i32>>>,
+    pub runtime_flags: Option<&'a mut i32>,
+    pub rlimits: Option<&'a mut LocalObject<'a, Array<Array<i32>>>>,
+    pub mount_external: Option<&'a mut i32>,
+    pub se_info: Option<&'a mut LocalObject<'a, JString>>,
+    pub nice_name: Option<&'a mut LocalObject<'a, JString>>,
+    pub fds_to_close: Option<&'a mut LocalObject<'a, Array<i32>>>,
+    pub fds_to_ignore: Option<&'a mut LocalObject<'a, Array<i32>>>,
+    pub is_child_zygote: Option<&'a mut bool>,
+    pub instruction_set: Option<&'a mut LocalObject<'a, JString>>,
+    pub app_data_dir: Option<&'a mut LocalObject<'a, JString>>,
+    pub is_top_app: Option<&'a mut bool>,
+    pub pkg_data_info_list: Option<&'a mut LocalObject<'a, Array<JString>>>,
+    pub whitelisted_data_info_list: Option<&'a mut LocalObject<'a, Array<JString>>>,
+    pub bind_mount_app_data_dirs: Option<&'a mut bool>,
+    pub bind_mount_app_storage_dirs: Option<&'a mut bool>,
 }
 
 pub struct ForkSystemServerArgs<'a> {
-    pub uid: Option<&'a mut uid_t>,
-    pub gid: Option<&'a mut gid_t>,
-    pub gids: Option<&'a mut jintArray>,
-    pub runtime_flags: Option<&'a mut jint>,
-    pub rlimits: Option<&'a mut jobjectArray>,
-    pub permitted_capabilities: Option<&'a mut jlong>,
-    pub effective_capabilities: Option<&'a mut jlong>,
+    pub uid: Option<&'a mut i32>,
+    pub gid: Option<&'a mut i32>,
+    pub gids: Option<&'a mut LocalObject<'a, Array<i32>>>,
+    pub runtime_flags: Option<&'a mut i32>,
+    pub rlimits: Option<&'a mut LocalObject<'a, Array<Array<i32>>>>,
+    pub permitted_capabilities: Option<&'a mut i64>,
+    pub effective_capabilities: Option<&'a mut i64>,
 }
 
 pub struct SpecializeAppProcessArgs<'a> {
-    pub uid: Option<&'a mut jint>,
-    pub gid: Option<&'a mut jint>,
-    pub gids: Option<&'a mut jintArray>,
-    pub runtime_flags: Option<&'a mut jint>,
-    pub rlimits: Option<&'a mut jobjectArray>,
-    pub mount_external: Option<&'a mut jint>,
-    pub se_info: Option<&'a mut jstring>,
-    pub nice_name: Option<&'a mut jstring>,
-    pub start_child_zygote: Option<&'a mut jboolean>,
-    pub instruction_set: Option<&'a mut jstring>,
-    pub app_data_dir: Option<&'a mut jstring>,
-    pub is_top_app: Option<&'a mut jboolean>,
-    pub pkg_data_info_list: Option<&'a mut jobjectArray>,
-    pub whitelisted_data_info_list: Option<&'a mut jobjectArray>,
-    pub bind_mount_app_data_dirs: Option<&'a mut jboolean>,
-    pub bind_mount_app_storage_dirs: Option<&'a mut jboolean>,
+    pub uid: Option<&'a mut i32>,
+    pub gid: Option<&'a mut i32>,
+    pub gids: Option<&'a mut LocalObject<'a, Array<i32>>>,
+    pub runtime_flags: Option<&'a mut i32>,
+    pub rlimits: Option<&'a mut LocalObject<'a, Array<Array<i32>>>>,
+    pub mount_external: Option<&'a mut i32>,
+    pub se_info: Option<&'a mut LocalObject<'a, JString>>,
+    pub nice_name: Option<&'a mut LocalObject<'a, JString>>,
+    pub start_child_zygote: Option<&'a mut bool>,
+    pub instruction_set: Option<&'a mut LocalObject<'a, JString>>,
+    pub app_data_dir: Option<&'a mut LocalObject<'a, JString>>,
+    pub is_top_app: Option<&'a mut bool>,
+    pub pkg_data_info_list: Option<&'a mut LocalObject<'a, Array<JString>>>,
+    pub whitelisted_data_info_list: Option<&'a mut LocalObject<'a, Array<JString>>>,
+    pub bind_mount_app_data_dirs: Option<&'a mut bool>,
+    pub bind_mount_app_storage_dirs: Option<&'a mut bool>,
 }
 
+#[derive(Copy, Clone)]
 pub enum ForkResult {
-    OnParent(libc::pid_t),
+    OnParent(i32),
     OnChild,
 }
+
+define_java_class!(Zygote, "com.android.internal.os.Zygote");
 
 pub trait Module {
     fn new(api: Api) -> Self;
@@ -73,18 +80,33 @@ pub trait Module {
     fn version(&self) -> i32;
     fn version_name(&self) -> String;
 
-    fn should_skip_uid(&mut self, uid: jint) -> bool;
-    fn pre_fork_and_specialize(&mut self, env: *mut JNIEnv, args: &mut ForkAndSpecializeArgs);
-    fn post_fork_and_specialize(&mut self, env: *mut JNIEnv, result: ForkResult);
-    fn pre_fork_system_server(&mut self, env: *mut JNIEnv, args: &mut ForkSystemServerArgs);
-    fn post_fork_system_server(&mut self, env: *mut JNIEnv, result: ForkResult);
-    fn pre_specialize_app_process(&mut self, env: *mut JNIEnv, args: &mut SpecializeAppProcessArgs);
-    fn post_specialize_app_process(&mut self, env: *mut JNIEnv);
+    fn should_skip_uid(&mut self, uid: i32) -> bool;
+    fn pre_fork_and_specialize<'a>(
+        &mut self,
+        ctx: &'a Context,
+        class: TrampolineClass<'a, Zygote>,
+        args: ForkAndSpecializeArgs<'a>,
+    );
+    fn post_fork_and_specialize<'a>(&mut self, ctx: &'a Context, class: TrampolineClass<'a, Zygote>, result: ForkResult);
+    fn pre_fork_system_server<'a>(
+        &mut self,
+        ctx: &'a Context,
+        class: TrampolineClass<'a, Zygote>,
+        args: ForkSystemServerArgs<'a>,
+    );
+    fn post_fork_system_server<'a>(&mut self, ctx: &'a Context, class: TrampolineClass<'a, Zygote>, result: ForkResult);
+    fn pre_specialize_app_process<'a>(
+        &mut self,
+        ctx: &'a Context,
+        class: TrampolineClass<'a, Zygote>,
+        args: SpecializeAppProcessArgs<'a>,
+    );
+    fn post_specialize_app_process<'a>(&mut self, ctx: &'a Context, class: TrampolineClass<'a, Zygote>);
 }
 
 pub struct Api {
-    module_path: PathBuf,
-    allow_unload: Option<&'static mut c_int>,
+    module_path: String,
+    allow_unload: Option<&'static mut i32>,
 }
 
 impl Api {
@@ -94,7 +116,7 @@ impl Api {
         }
     }
 
-    pub fn get_module_path(&self) -> &Path {
+    pub fn get_module_path(&self) -> &str {
         &self.module_path
     }
 }
@@ -111,7 +133,7 @@ macro_rules! register_riru_module {
 
 static mut MODULE: *mut () = null_mut();
 
-unsafe extern "C" fn module_should_skip_uid<M: Module>(uid: c_int) -> c_int {
+unsafe extern "C" fn module_should_skip_uid<M: Module>(uid: i32) -> i32 {
     if (*MODULE.cast::<M>()).should_skip_uid(uid) {
         1
     } else {
@@ -119,140 +141,148 @@ unsafe extern "C" fn module_should_skip_uid<M: Module>(uid: c_int) -> c_int {
     }
 }
 
-unsafe extern "C" fn module_fork_and_specialize_pre<M: Module>(
-    env: *mut JNIEnv,
-    _: jclass,
-    uid: *mut jint,
-    gid: *mut jint,
-    gids: *mut jintArray,
-    runtime_flags: *mut jint,
-    rlimits: *mut jobjectArray,
-    mount_external: *mut jint,
-    se_info: *mut jstring,
-    nice_name: *mut jstring,
-    fds_to_close: *mut jintArray,
-    fds_to_ignore: *mut jintArray,
-    is_child_zygote: *mut jboolean,
-    instruction_set: *mut jstring,
-    app_data_dir: *mut jstring,
-    is_top_app: *mut jboolean,
-    pkg_data_info_list: *mut jobjectArray,
-    whitelisted_data_info_list: *mut jobjectArray,
-    bind_mount_app_data_dirs: *mut jboolean,
-    bind_mount_app_storage_dirs: *mut jboolean,
+unsafe extern "C" fn module_fork_and_specialize_pre<'a, M: Module>(
+    ctx: &'a Context,
+    clazz: TrampolineClass<'a, Zygote>,
+    uid: Option<&'a mut i32>,
+    gid: Option<&'a mut i32>,
+    gids: Option<&'a mut LocalObject<'a, Array<i32>>>,
+    runtime_flags: Option<&'a mut i32>,
+    rlimits: Option<&'a mut LocalObject<'a, Array<Array<i32>>>>,
+    mount_external: Option<&'a mut i32>,
+    se_info: Option<&'a mut LocalObject<'a, JString>>,
+    nice_name: Option<&'a mut LocalObject<'a, JString>>,
+    fds_to_close: Option<&'a mut LocalObject<'a, Array<i32>>>,
+    fds_to_ignore: Option<&'a mut LocalObject<'a, Array<i32>>>,
+    is_child_zygote: Option<&'a mut bool>,
+    instruction_set: Option<&'a mut LocalObject<'a, JString>>,
+    app_data_dir: Option<&'a mut LocalObject<'a, JString>>,
+    is_top_app: Option<&'a mut bool>,
+    pkg_data_info_list: Option<&'a mut LocalObject<'a, Array<JString>>>,
+    whitelisted_data_info_list: Option<&'a mut LocalObject<'a, Array<JString>>>,
+    bind_mount_app_data_dirs: Option<&'a mut bool>,
+    bind_mount_app_storage_dirs: Option<&'a mut bool>,
 ) {
-    let mut args = ForkAndSpecializeArgs {
-        uid: uid.as_mut(),
-        gid: gid.as_mut(),
-        gids: gids.as_mut(),
-        runtime_flags: runtime_flags.as_mut(),
-        rlimits: rlimits.as_mut(),
-        mount_external: mount_external.as_mut(),
-        se_info: se_info.as_mut(),
-        nice_name: nice_name.as_mut(),
-        fds_to_close: fds_to_close.as_mut(),
-        fds_to_ignore: fds_to_ignore.as_mut(),
-        is_child_zygote: is_child_zygote.as_mut(),
-        instruction_set: instruction_set.as_mut(),
-        app_data_dir: app_data_dir.as_mut(),
-        is_top_app: is_top_app.as_mut(),
-        pkg_data_info_list: pkg_data_info_list.as_mut(),
-        whitelisted_data_info_list: whitelisted_data_info_list.as_mut(),
-        bind_mount_app_data_dirs: bind_mount_app_data_dirs.as_mut(),
-        bind_mount_app_storage_dirs: bind_mount_app_storage_dirs.as_mut(),
+    let args = ForkAndSpecializeArgs {
+        uid,
+        gid,
+        gids,
+        runtime_flags,
+        rlimits,
+        mount_external,
+        se_info,
+        nice_name,
+        fds_to_close,
+        fds_to_ignore,
+        is_child_zygote,
+        instruction_set,
+        app_data_dir,
+        is_top_app,
+        pkg_data_info_list,
+        whitelisted_data_info_list,
+        bind_mount_app_data_dirs,
+        bind_mount_app_storage_dirs,
     };
 
-    (*MODULE.cast::<M>()).pre_fork_and_specialize(env, &mut args);
+    (*MODULE.cast::<M>()).pre_fork_and_specialize(ctx, clazz, args);
 }
 
-unsafe extern "C" fn module_fork_and_specialize_post<M: Module>(env: *mut JNIEnv, _: jclass, res: jint) {
+unsafe extern "C" fn module_fork_and_specialize_post<'a, M: Module>(
+    ctx: &'a Context,
+    clazz: TrampolineClass<'a, Zygote>,
+    res: i32,
+) {
     let result = if res == 0 {
         ForkResult::OnChild
     } else {
-        ForkResult::OnParent(res as libc::pid_t)
+        ForkResult::OnParent(res)
     };
 
-    (*MODULE.cast::<M>()).post_fork_and_specialize(env, result);
+    (*MODULE.cast::<M>()).post_fork_and_specialize(ctx, clazz, result);
 }
 
-unsafe extern "C" fn module_fork_system_server_pre<M: Module>(
-    env: *mut JNIEnv,
-    _: jclass,
-    uid: *mut uid_t,
-    gid: *mut gid_t,
-    gids: *mut jintArray,
-    runtime_flags: *mut jint,
-    rlimits: *mut jobjectArray,
-    permitted_capabilities: *mut jlong,
-    effective_capabilities: *mut jlong,
+unsafe extern "C" fn module_fork_system_server_pre<'a, M: Module>(
+    ctx: &'a Context,
+    clazz: TrampolineClass<'a, Zygote>,
+    uid: Option<&'a mut i32>,
+    gid: Option<&'a mut i32>,
+    gids: Option<&'a mut LocalObject<'a, Array<i32>>>,
+    runtime_flags: Option<&'a mut i32>,
+    rlimits: Option<&'a mut LocalObject<'a, Array<Array<i32>>>>,
+    permitted_capabilities: Option<&'a mut i64>,
+    effective_capabilities: Option<&'a mut i64>,
 ) {
-    let mut args = ForkSystemServerArgs {
-        uid: uid.as_mut(),
-        gid: gid.as_mut(),
-        gids: gids.as_mut(),
-        runtime_flags: runtime_flags.as_mut(),
-        rlimits: rlimits.as_mut(),
-        permitted_capabilities: permitted_capabilities.as_mut(),
-        effective_capabilities: effective_capabilities.as_mut(),
+    let args = ForkSystemServerArgs {
+        uid,
+        gid,
+        gids,
+        runtime_flags,
+        rlimits,
+        permitted_capabilities,
+        effective_capabilities,
     };
 
-    (*MODULE.cast::<M>()).pre_fork_system_server(env, &mut args);
+    (*MODULE.cast::<M>()).pre_fork_system_server(ctx, clazz, args);
 }
 
-unsafe extern "C" fn module_fork_system_server_post<M: Module>(env: *mut JNIEnv, _: jclass, res: jint) {
+unsafe extern "C" fn module_fork_system_server_post<'a, M: Module>(
+    ctx: &'a Context,
+    clazz: TrampolineClass<'a, Zygote>,
+    res: i32,
+) {
     let result = if res == 0 {
         ForkResult::OnChild
     } else {
-        ForkResult::OnParent(res as libc::pid_t)
+        ForkResult::OnParent(res)
     };
 
-    (*MODULE.cast::<M>()).post_fork_system_server(env, result);
+    (*MODULE.cast::<M>()).post_fork_system_server(ctx, clazz, result);
 }
 
-unsafe extern "C" fn module_specialize_app_process_pre<M: Module>(
-    env: *mut JNIEnv,
-    _: jclass,
-    uid: *mut jint,
-    gid: *mut jint,
-    gids: *mut jintArray,
-    runtime_flags: *mut jint,
-    rlimits: *mut jobjectArray,
-    mount_external: *mut jint,
-    se_info: *mut jstring,
-    nice_name: *mut jstring,
-    start_child_zygote: *mut jboolean,
-    instruction_set: *mut jstring,
-    app_data_dir: *mut jstring,
-    is_top_app: *mut jboolean,
-    pkg_data_info_list: *mut jobjectArray,
-    whitelisted_data_info_list: *mut jobjectArray,
-    bind_mount_app_data_dirs: *mut jboolean,
-    bind_mount_app_storage_dirs: *mut jboolean,
+unsafe extern "C" fn module_specialize_app_process_pre<'a, M: Module>(
+    ctx: &'a Context,
+    clazz: TrampolineClass<'a, Zygote>,
+    uid: Option<&'a mut i32>,
+    gid: Option<&'a mut i32>,
+    gids: Option<&'a mut LocalObject<'a, Array<i32>>>,
+    runtime_flags: Option<&'a mut i32>,
+    rlimits: Option<&'a mut LocalObject<'a, Array<Array<i32>>>>,
+    mount_external: Option<&'a mut i32>,
+    se_info: Option<&'a mut LocalObject<'a, JString>>,
+    nice_name: Option<&'a mut LocalObject<'a, JString>>,
+    start_child_zygote: Option<&'a mut bool>,
+    instruction_set: Option<&'a mut LocalObject<'a, JString>>,
+    app_data_dir: Option<&'a mut LocalObject<'a, JString>>,
+    is_top_app: Option<&'a mut bool>,
+    pkg_data_info_list: Option<&'a mut LocalObject<'a, Array<JString>>>,
+    whitelisted_data_info_list: Option<&'a mut LocalObject<'a, Array<JString>>>,
+    bind_mount_app_data_dirs: Option<&'a mut bool>,
+    bind_mount_app_storage_dirs: Option<&'a mut bool>,
 ) {
-    let mut args = SpecializeAppProcessArgs {
-        uid: uid.as_mut(),
-        gid: gid.as_mut(),
-        gids: gids.as_mut(),
-        runtime_flags: runtime_flags.as_mut(),
-        rlimits: rlimits.as_mut(),
-        mount_external: mount_external.as_mut(),
-        se_info: se_info.as_mut(),
-        nice_name: nice_name.as_mut(),
-        start_child_zygote: start_child_zygote.as_mut(),
-        instruction_set: instruction_set.as_mut(),
-        app_data_dir: app_data_dir.as_mut(),
-        is_top_app: is_top_app.as_mut(),
-        pkg_data_info_list: pkg_data_info_list.as_mut(),
-        whitelisted_data_info_list: whitelisted_data_info_list.as_mut(),
-        bind_mount_app_data_dirs: bind_mount_app_data_dirs.as_mut(),
-        bind_mount_app_storage_dirs: bind_mount_app_storage_dirs.as_mut(),
+    let args = SpecializeAppProcessArgs {
+        uid,
+        gid,
+        gids,
+        runtime_flags,
+        rlimits,
+        mount_external,
+        se_info,
+        nice_name,
+        start_child_zygote,
+        instruction_set,
+        app_data_dir,
+        is_top_app,
+        pkg_data_info_list,
+        whitelisted_data_info_list,
+        bind_mount_app_data_dirs,
+        bind_mount_app_storage_dirs,
     };
 
-    (*MODULE.cast::<M>()).pre_specialize_app_process(env, &mut args);
+    (*MODULE.cast::<M>()).pre_specialize_app_process(ctx, clazz, args);
 }
 
-unsafe extern "C" fn module_specialize_app_process_post<M: Module>(env: *mut JNIEnv, _: jclass) {
-    (*MODULE.cast::<M>()).post_specialize_app_process(env);
+unsafe extern "C" fn module_specialize_app_process_post<'a, M: Module>(ctx: &'a Context, clazz: TrampolineClass<'a, Zygote>) {
+    (*MODULE.cast::<M>()).post_specialize_app_process(ctx, clazz);
 }
 
 #[doc(hidden)]
@@ -266,7 +296,7 @@ pub unsafe fn _module_entry<M: Module>(riru: *const Riru) -> *mut RiruVersionedM
     }
 
     let api = Api {
-        module_path: PathBuf::from(CStr::from_ptr((*riru).magisk_module_path).to_str().unwrap().to_string()),
+        module_path: CStr::from_ptr((*riru).magisk_module_path).to_str().unwrap().to_string(),
         allow_unload: (*riru).allow_unload.as_mut(),
     };
 
@@ -280,12 +310,12 @@ pub unsafe fn _module_entry<M: Module>(riru: *const Riru) -> *mut RiruVersionedM
             version_name: CString::new(module.version_name()).unwrap().into_raw(),
             on_module_loaded: None,
             should_skip_uid: Some(module_should_skip_uid::<M>),
-            fork_and_specialize_pre: Some(module_fork_and_specialize_pre::<M>),
-            fork_and_specialize_post: Some(module_fork_and_specialize_post::<M>),
-            fork_system_server_pre: Some(module_fork_system_server_pre::<M>),
-            fork_system_server_post: Some(module_fork_system_server_post::<M>),
-            specialize_app_process_pre: Some(module_specialize_app_process_pre::<M>),
-            specialize_app_process_post: Some(module_specialize_app_process_post::<M>),
+            fork_and_specialize_pre: Some(core::mem::transmute(module_fork_and_specialize_pre::<M> as *const ())),
+            fork_and_specialize_post: Some(core::mem::transmute(module_fork_and_specialize_post::<M> as *const ())),
+            fork_system_server_pre: Some(core::mem::transmute(module_fork_system_server_pre::<M> as *const ())),
+            fork_system_server_post: Some(core::mem::transmute(module_fork_system_server_post::<M> as *const ())),
+            specialize_app_process_pre: Some(core::mem::transmute(module_specialize_app_process_pre::<M> as *const ())),
+            specialize_app_process_post: Some(core::mem::transmute(module_specialize_app_process_post::<M> as *const ())),
         },
     };
 

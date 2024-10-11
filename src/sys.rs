@@ -1,7 +1,6 @@
-use std::ffi::{c_char, c_int, c_void};
+use core::ffi::{c_char, c_int, c_void};
 
-use jni_sys::{jboolean, jclass, jint, jintArray, jlong, jobjectArray, jstring, JNIEnv};
-use libc::{gid_t, uid_t};
+use typed_jni::sys::{jboolean, jclass, jint, jintArray, jlong, jobjectArray, jstring, JNIEnv};
 
 pub const API_VERSION: c_int = 26;
 
@@ -36,8 +35,8 @@ pub type NativeForkSystemServerPreFunc = Option<
     unsafe extern "C" fn(
         env: *mut JNIEnv,
         cls: jclass,
-        uid: *mut uid_t,
-        gid: *mut gid_t,
+        uid: *mut jint,
+        gid: *mut jint,
         gids: *mut jintArray,
         runtime_flags: *mut jint,
         rlimits: *mut jobjectArray,
